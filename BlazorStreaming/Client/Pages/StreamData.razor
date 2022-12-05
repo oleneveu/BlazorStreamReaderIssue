@@ -21,7 +21,8 @@
         streamedData = "Waiting for server data...";
 
         _streamingTask = BeginReadText();           // Reading the data through a StreamReader brings out the issue
-                                                    //_streamingTask = BeginReadByteCount();    // Reading the data directly from the stream works as expected
+        //_streamingTask = BeginReadByteCount();    // Reading the data directly from the stream works as expected
+
         return Task.CompletedTask;
     }
 
