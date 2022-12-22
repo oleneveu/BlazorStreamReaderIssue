@@ -1,9 +1,71 @@
 ﻿@page "/"
+@implements IAsyncDisposable
+@inject HttpClient Http
 
 <PageTitle>Index</PageTitle>
 
-<h1>Hello, world!</h1>
+<p role="status">Streamed data: @streamedData</p>
 
-Welcome to your new app.
+@code
+{
+    private string? streamedData;
+    private CancellationTokenSource _cts = new CancellationTokenSource();
+    private Task _streamingTask = null!;
 
-<SurveyPrompt Title="How is Blazor working for you?" />
+    protected override Task OnInitializedAsync()
+    {
+        streamedData = "Waiting for server data...";
+
+        _streamingTask = BeginReadByteCount();
+
+        return Task.CompletedTask;
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        await _streamingTask;
+    }
+
+    /// <summary>
+    /// This method reads the data from the response stream and displays the number of bytes received.
+    /// With Blazor 6, the number of bytes received is updated for each line written to the response by the server.
+    /// With Blazor 7, the number of bytes received is only updated when the buffer is full.
+    /// </summary>
+    private async Task BeginReadByteCount()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "DataStreaming");
+        request.SetBrowserResponseStreamingEnabled(true);
+
+        using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, _cts.Token);
+        try
+        {
+            var responseStream = await response.Content.ReadAsStreamAsync();
+
+            // Read the response chunk by chunk and count the number of bytes
+            int byteCount = 0;
+            var bytes = new byte[100];
+            while (!_cts.Token.IsCancellationRequested)
+            {
+                // When using Blazor 7, ReadAsync() will block until the buffer is full.
+                // With Blazor 6, ReadAsync() will return each time a paquet is received from the server.
+                var read = await responseStream.ReadAsync(bytes, _cts.Token);
+                if (read == 0) // End of stream
+                    return;
+
+                byteCount += read;
+                streamedData = byteCount.ToString("00000");
+
+                // Update the UI
+                StateHasChanged();
+            }
+
+            streamedData = "End of stream";
+            this.StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+}
